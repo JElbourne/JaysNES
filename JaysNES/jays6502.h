@@ -28,7 +28,7 @@ public:
 	uint8_t x = 0x00;		// X Register
 	uint8_t y = 0x00;		// Y Register
 	uint8_t stkp = 0x00;	// Stack Pointer (points to location of bus)
-	uint16_t pc = 0x0000;		// Program Counter	
+	uint16_t pc = 0x0000;	// Program Counter	
 	uint8_t status = 0x00;	// Status Register
 
 	void ConnectBus(Bus *n) { bus = n; }
@@ -65,12 +65,12 @@ public:
 	void nmi();
 
 	uint8_t fetch();
-	uint8_t fetched = 0x00;
-
-	uint16_t addr_abs = 0x0000;
-	uint16_t addr_rel = 0x000;
-	uint8_t opcode = 0x00;
-	uint8_t cycles = 0x00;
+	uint8_t fetched		= 0x00;
+	uint16_t temp		= 0x0000;
+	uint16_t addr_abs	= 0x0000;
+	uint16_t addr_rel	= 0x000;
+	uint8_t opcode		= 0x00;
+	uint8_t cycles		= 0x00;
 
 private:
 	Bus		*bus = nullptr;

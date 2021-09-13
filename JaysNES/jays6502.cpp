@@ -1,4 +1,7 @@
 #include "jays6502.h"
+
+#include <ios>
+
 #include "Bus.h"
 
 jays6502::jays6502()
@@ -47,6 +50,72 @@ void jays6502::clock()
 	cycles--;
 }
 
+void jays6502::reset()
+{
+	a = 0;
+	x = 0;
+	y = 0;
+	stkp = 0xFD;
+	status = 0x00 | U;
+
+	addr_abs = 0xFFFC;
+	uint16_t lo = read(addr_abs + 0);
+	uint16_t hi = read(addr_abs + 1);
+
+	pc = (hi << 8) | lo;
+
+	addr_rel = 0x0000;
+	addr_abs = 0x0000;
+	fetched = 0x00;
+
+	cycles = 8;
+}
+
+void jays6502::irq()
+{
+	if(GetFlag(I) == 0)
+	{
+		write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+		stkp--;
+		write(0x0100 + stkp, pc & 0x00FF);
+		stkp--;
+
+		SetFlag(B, 0);
+		SetFlag(U, 1);
+		SetFlag(I, 1);
+		write(0x0100 + stkp, status);
+		stkp--;
+
+		addr_abs = 0xFFFE;
+		uint16_t lo = read(addr_abs + 0);
+		uint16_t hi = read(addr_abs + 1);
+		pc = (hi << 8) | lo;
+
+		cycles = 7;
+	}
+}
+
+void jays6502::nmi()
+{
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
+
+	SetFlag(B, 0);
+	SetFlag(U, 1);
+	SetFlag(I, 1);
+	write(0x0100 + stkp, status);
+	stkp--;
+
+	addr_abs = 0xFFFA;
+	uint16_t lo = read(addr_abs + 0);
+	uint16_t hi = read(addr_abs + 1);
+	pc = (hi << 8) | lo;
+
+	cycles = 8;
+}
+
 uint8_t jays6502::read(uint16_t a)
 {
 	if (bus != nullptr)
@@ -60,6 +129,11 @@ void jays6502::write(uint16_t a, uint8_t d)
 	bus->write(a, d);
 }
 
+uint8_t jays6502::GetFlag(FLAGS6502 f)
+{
+	return ((status & f) > 0) ? 1 : 0;
+}
+
 void jays6502::SetFlag(FLAGS6502 f, bool v)
 {
 	if (v)
@@ -70,6 +144,15 @@ void jays6502::SetFlag(FLAGS6502 f, bool v)
 	{
 		status &= ~f;
 	}
+}
+
+uint8_t jays6502::fetch()
+{
+	if (!(lookup[opcode].addrmode == &jays6502::IMP))
+	{
+		fetched = read(addr_abs);
+	}
+	return fetched;
 }
 
 // Addressing Modes
@@ -228,3 +311,596 @@ uint8_t jays6502::REL()
 
 // Instructions
 
+
+uint8_t jays6502::ADC()
+{
+	fetch();
+	uint16_t temp = (uint16_t)a + (uint16_t)fetched + (uint16_t)GetFlag(C);
+	SetFlag(C, temp > 255);
+	SetFlag(Z, (temp & 0x00FF) == 0);
+	SetFlag( N, temp & 0x80);
+	SetFlag( V, (~((uint16_t)a ^ (uint16_t)fetched) & ((uint16_t)a ^ (uint16_t)temp)) & 0x0080);
+	a = temp & 0x00FF;
+	return 1;
+}
+
+uint8_t jays6502::SBC()
+{
+	fetch();
+
+	uint16_t value = ((uint16_t)fetched) ^ 0x00FF;
+	
+	uint16_t temp = (uint16_t)a + value + (uint16_t)GetFlag(C);
+	SetFlag(C, temp & 0xFF00);
+	SetFlag(Z, (temp & 0x00FF) == 0);
+	SetFlag( N, temp & 0x80);
+	SetFlag( V, ((uint16_t)a ^ temp) & (temp ^ value) & 0x0080);
+	a = temp & 0x00FF;
+	return 1;
+}
+
+uint8_t jays6502::AND()
+{
+	fetch();
+	a = a & fetched;
+	SetFlag(Z, a == 0x80);
+	SetFlag(N, a & 0x80);
+	return 1;
+}
+
+uint8_t jays6502::ASL()
+{
+	fetch();
+	temp = (uint16_t)fetched << 1;
+	SetFlag(C, (temp & 0xFF00) > 0);
+	SetFlag(Z, (temp & 0x00FF) == 0x00);
+	SetFlag(N, temp & 0x80);
+	if (lookup[opcode].addrmode == &jays6502::IMP)
+	{
+		a = temp & 0x00FF;
+	}
+	else
+	{
+		write(addr_abs, temp & 0x00FF);
+	}
+	return 0;
+}
+
+uint8_t jays6502::BCS()
+{
+	if(GetFlag(C) == 1)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BCC()
+{
+	if(GetFlag(C) == 0)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BEQ()
+{
+	if(GetFlag(Z) == 1)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BIT()
+{
+	fetch();
+	temp = a & fetched;
+	SetFlag(Z, (temp & 0x00FF) == 0x00);
+	SetFlag(N, fetched & (1 << 7));
+	SetFlag(V, fetched & (1 << 6));
+	return 0;
+}
+
+uint8_t jays6502::BMI()
+{
+	if(GetFlag(N) == 1)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BNE()
+{
+	if(GetFlag(Z) == 0)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BPL()
+{
+	if(GetFlag(N) == 0)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BRK()
+{
+	pc++;
+
+	SetFlag(I, true);
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
+
+	SetFlag(B, true);
+	write(0x0100 + stkp, status);
+	stkp--;
+	SetFlag(B,0);
+
+	pc = (uint16_t)read(0xFFFE) | ((uint16_t)read(0xFFFF) << 8);
+	return 0;
+}
+
+uint8_t jays6502::BVC()
+{
+	if(GetFlag(V) == 0)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::BVS()
+{
+	if(GetFlag(V) == 1)
+	{
+		cycles++;
+		addr_abs = pc + addr_rel;
+
+		if ((addr_abs & 0xFF00) != (pc & 0xFF00))
+		{
+			cycles++;
+		}
+
+		pc = addr_abs;
+	}
+	return 0;
+}
+
+uint8_t jays6502::CLC()
+{
+	SetFlag(C, false);
+	return 0;
+}
+
+uint8_t jays6502::CLD()
+{
+	SetFlag(D, false);
+	return 0;
+}
+
+uint8_t jays6502::CLI()
+{
+	SetFlag(I, false);
+	return 0;
+}
+
+uint8_t jays6502::CLV()
+{
+	SetFlag(V, false);
+	return 0;
+}
+
+uint8_t jays6502::CMP()
+{
+	fetch();
+	temp = (uint16_t)a - (uint16_t)fetched;
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(C, a >= fetched);
+	return 1;
+}
+
+uint8_t jays6502::CPX()
+{
+	fetch();
+	temp = (uint16_t)x - (uint16_t)fetched;
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(C, a >= fetched);
+	return 1;
+}
+
+uint8_t jays6502::CPY()
+{
+	fetch();
+	temp = (uint16_t)y - (uint16_t)fetched;
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	SetFlag(C, a >= fetched);
+	return 1;
+}
+
+uint8_t jays6502::DEC()
+{
+	fetch();
+	temp = fetched - 1;
+	write(addr_abs, temp & 0x00FF);
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	return 0;
+}
+
+uint8_t jays6502::DEX()
+{
+	x--;
+	SetFlag(N, x & 0x80);
+	SetFlag(Z, x == 0x00);
+	return 0;
+}
+
+uint8_t jays6502::DEY()
+{
+	y--;
+	SetFlag(N, y & 0x80);
+	SetFlag(Z, y == 0x00);
+	return 0;
+}
+
+uint8_t jays6502::EOR()
+{
+	fetch();
+	a = a ^ fetched;
+	SetFlag(N, a & 0x80);
+	SetFlag(Z, a == 0x00);
+	return 1;
+}
+
+uint8_t jays6502::INC()
+{
+	fetch();
+	temp = fetched + 1;
+	write(addr_abs, temp & 0x00FF);
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	return 1;
+}
+
+uint8_t jays6502::INX()
+{
+	x++;
+	SetFlag(N, x & 0x80);
+	SetFlag(Z, x == 0x00);
+	return 0;
+}
+
+uint8_t jays6502::INY()
+{
+	y++;
+	SetFlag(N, y & 0x80);
+	SetFlag(Z, y == 0x00);
+	return 0;
+}
+
+uint8_t jays6502::JMP()
+{
+	pc = addr_abs;
+	return 0;
+}
+
+uint8_t jays6502::JSR()
+{
+	pc--;
+
+	write(0x0100 + stkp, (pc >> 8) & 0x00FF);
+	stkp--;
+	write(0x0100 + stkp, pc & 0x00FF);
+	stkp--;
+
+	pc = addr_abs;
+	return 0;
+}
+
+uint8_t jays6502::LDA()
+{
+	fetch();
+	a = fetched;
+	SetFlag(N, a & 0x80);
+	SetFlag(Z, a == 0x00);
+	return 1;
+}
+
+uint8_t jays6502::LDX()
+{
+	fetch();
+	x = fetched;
+	SetFlag(N, x & 0x80);
+	SetFlag(Z, x == 0x00);
+	return 1;
+}
+
+uint8_t jays6502::LDY()
+{
+	fetch();
+	y = fetched;
+	SetFlag(N, y & 0x80);
+	SetFlag(Z, y == 0x00);
+	return 1;
+}
+
+uint8_t jays6502::LSR()
+{
+	fetch();
+	SetFlag(C, fetched & 0x0001);
+	temp = fetched >> 1;
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	if (lookup[opcode].addrmode == &jays6502::IMP)
+		a = temp & 0x00FF;
+	else
+		write(addr_abs, temp & 0x00FF);
+	return 0;
+}
+
+uint8_t jays6502::NOP()
+{
+	switch (opcode) {
+	case 0x1C:
+	case 0x3C:
+	case 0x5C:
+	case 0x7C:
+	case 0xDC:
+	case 0xFC:
+		return 1;
+		break;
+	}
+	return 0;
+}
+
+uint8_t jays6502::ORA()
+{
+	fetch();
+	a = a | fetched;
+	SetFlag(N, y & 0x80);
+	SetFlag(Z, y == 0x00);
+	return 1;
+}
+
+uint8_t jays6502::PHA()
+{
+	write(0x0100 + stkp, a);
+	stkp--;
+	return 0;
+}
+
+uint8_t jays6502::PHP()
+{
+	write(0x0100 + stkp, status | B | U);
+	SetFlag(B, 0);
+	SetFlag(U, 0);
+	stkp--;
+	return 0;
+}
+
+uint8_t jays6502::PLA()
+{
+	stkp++;
+	a = read(0x0100 + stkp);
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 0;
+}
+
+uint8_t jays6502::PLP()
+{
+	stkp++;
+	status = read(0x0100 + stkp);
+	SetFlag(U, 1);
+	return 0;
+}
+
+uint8_t jays6502::ROL()
+{
+	fetch();
+	temp = (uint16_t)(fetched << 1) | GetFlag(C);
+	SetFlag(C, temp & 0xFF00);
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x0000);
+	if (lookup[opcode].addrmode == &jays6502::IMP)
+		a = temp & 0x00FF;
+	else
+		write(addr_abs, temp & 0x00FF);
+	return 0;
+}
+
+uint8_t jays6502::ROR()
+{
+	fetch();
+	temp = (uint16_t)(GetFlag(C) << 7) | (fetched >> 1);
+	SetFlag(C, fetched & 0x01);
+	SetFlag(N, temp & 0x0080);
+	SetFlag(Z, (temp & 0x00FF) == 0x00);
+	if (lookup[opcode].addrmode == &jays6502::IMP)
+		a = temp & 0x00FF;
+	else
+		write(addr_abs, temp & 0x00FF);
+	return 0;
+}
+
+uint8_t jays6502::RTI()
+{
+	stkp++;
+	status = read(0x0100 + stkp);
+	status &= ~B;
+	status &= ~U;
+
+	stkp++;
+	pc = (uint16_t)read(0x0100 + stkp);
+	stkp++;
+	pc = (uint16_t)read(0x0100 + stkp) << 8;
+	return 0;
+}
+
+uint8_t jays6502::RTS()
+{
+	stkp++;
+	pc = (uint16_t)read(0x0100 + stkp);
+	stkp++;
+	pc |= (uint16_t)read(0x0100 + stkp) << 8;
+
+	pc++;
+	return 0;
+}
+
+uint8_t jays6502::SEC()
+{
+	SetFlag(C, 1);
+	return 0;
+}
+
+uint8_t jays6502::SED()
+{
+	SetFlag(D, 1); 
+	return 0;
+}
+
+uint8_t jays6502::SEI()
+{
+	SetFlag(I, 1); 
+	return 0;
+}
+
+uint8_t jays6502::STA()
+{
+	write(addr_abs, a);
+	return 0;
+}
+
+uint8_t jays6502::STX()
+{
+	write(addr_abs, x);
+	return 0;
+}
+
+uint8_t jays6502::STY()
+{
+	write(addr_abs, y);
+	return 0;
+}
+
+uint8_t jays6502::TAX()
+{
+	x = a;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+uint8_t jays6502::TAY()
+{
+	y = a;
+	SetFlag(Z, y == 0x00);
+	SetFlag(N, y & 0x80);
+	return 0;
+}
+
+uint8_t jays6502::TSX()
+{
+	x = stkp;
+	SetFlag(Z, x == 0x00);
+	SetFlag(N, x & 0x80);
+	return 0;
+}
+
+uint8_t jays6502::TXA()
+{
+	a = x;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 0;;
+}
+
+uint8_t jays6502::TXS()
+{
+	stkp = x;
+	SetFlag(Z, stkp == 0x00);
+	SetFlag(N, stkp & 0x80);
+	return 0;;
+}
+
+uint8_t jays6502::TYA()
+{
+	a = y;
+	SetFlag(Z, a == 0x00);
+	SetFlag(N, a & 0x80);
+	return 0;;
+}
+
+uint8_t jays6502::XXX()
+{
+	return 0;
+}
