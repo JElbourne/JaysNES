@@ -3,6 +3,11 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <map>
+
+#ifdef LOGMODE
+#include <stdio.h>
+#endif
 
 class Bus;
 
@@ -31,7 +36,6 @@ public:
 	uint16_t pc = 0x0000;	// Program Counter	
 	uint8_t status = 0x00;	// Status Register
 
-	void ConnectBus(Bus *n) { bus = n; }
 
 	// Addressing Modes
 	uint8_t IMP();		uint8_t IMM();
@@ -64,15 +68,24 @@ public:
 	void irq();
 	void nmi();
 
-	uint8_t fetch();
+	bool complete();
+
+	void ConnectBus(Bus* n) { bus = n; }
+
+	std::map<uint16_t, std::string> disassemble(uint16_t nStart, uint16_t nStop);
+
+private:
+
 	uint8_t fetched		= 0x00;
 	uint16_t temp		= 0x0000;
 	uint16_t addr_abs	= 0x0000;
 	uint16_t addr_rel	= 0x000;
 	uint8_t opcode		= 0x00;
 	uint8_t cycles		= 0x00;
+	uint32_t clock_count = 0;
 
-private:
+	uint8_t fetch();
+
 	Bus		*bus = nullptr;
 	uint8_t	read(uint16_t a);
 	void	write(uint16_t a, uint8_t d);
@@ -89,5 +102,12 @@ private:
 	};
 
 	std::vector<INSTRUCTION> lookup;
+
+
+#ifdef LOGMODE
+private:
+	FILE* logfile = nullptr;
+#endif
 };
 
+//End of File - JayE
