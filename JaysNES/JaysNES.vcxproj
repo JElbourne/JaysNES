@@ -140,11 +140,15 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Bus.cpp" />
+    <ClCompile Include="Cartridge.cpp" />
     <ClCompile Include="Demo_jays6502.cpp" />
+    <ClCompile Include="jays2C02.cpp" />
     <ClCompile Include="jays6502.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Bus.h" />
+    <ClInclude Include="Cartridge.h" />
+    <ClInclude Include="jays2C02.h" />
     <ClInclude Include="jays6502.h" />
     <ClInclude Include="olcPixelGameEngine.h" />
   </ItemGroup>
