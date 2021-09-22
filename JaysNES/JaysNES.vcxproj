@@ -144,12 +144,16 @@
     <ClCompile Include="Demo_jays6502.cpp" />
     <ClCompile Include="jays2C02.cpp" />
     <ClCompile Include="jays6502.cpp" />
+    <ClCompile Include="Mapper.cpp" />
+    <ClCompile Include="Mapper_000.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Bus.h" />
     <ClInclude Include="Cartridge.h" />
     <ClInclude Include="jays2C02.h" />
     <ClInclude Include="jays6502.h" />
+    <ClInclude Include="Mapper.h" />
+    <ClInclude Include="Mapper_000.h" />
     <ClInclude Include="olcPixelGameEngine.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

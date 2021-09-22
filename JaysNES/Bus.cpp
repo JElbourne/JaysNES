@@ -62,5 +62,10 @@ void Bus::reset()
 
 void Bus::clock()
 {
-
+	ppu.clock();
+	if (nSystemClockCounter % 3 == 0)
+	{
+		cpu.clock();
+	}
+	nSystemClockCounter++;
 }
