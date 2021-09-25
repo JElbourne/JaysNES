@@ -71,27 +71,9 @@ jays2C02::jays2C02()
 	palScreen[0x3F] = olc::Pixel(0, 0, 0);
 }
 
-void jays2C02::cpuWrite(uint16_t addr, uint8_t data)
+olc::Pixel jays2C02::GetColourFromPaletteRam(uint8_t palette, uint8_t pixel)
 {
-	switch (addr)
-	{
-	case 0x000: // Control
-		break;
-	case 0x001: // Mask
-		break;
-	case 0x002: // Status
-		break;
-	case 0x003: // OAM Address
-		break;
-	case 0x004: // OAM Data
-		break;
-	case 0x005: // Scroll
-		break;
-	case 0x006: // PPU Address
-		break;
-	case 0x007: // PPU Data
-		break;
-	}
+	return palScreen[ppuRead(0x3F00 + (palette << 2) + pixel)];
 }
 
 uint8_t jays2C02::cpuRead(uint16_t addr, bool bReadOnly /*= false*/)
@@ -100,25 +82,72 @@ uint8_t jays2C02::cpuRead(uint16_t addr, bool bReadOnly /*= false*/)
 
 	switch (addr)
 	{
-	case 0x000: // Control
+	case 0x0000: // Control
 		break;
-	case 0x001: // Mask
+	case 0x0001: // Mask
 		break;
-	case 0x002: // Status
+	case 0x0002: // Status
+		status.vertical_blank = 1;
+		data = (status.reg & 0xE0) | (ppu_data_buffer & 0x1F);
+		status.vertical_blank = 0;
+		address_latch = 0;
 		break;
-	case 0x003: // OAM Address
+	case 0x0003: // OAM Address
 		break;
-	case 0x004: // OAM Data
+	case 0x0004: // OAM Data
 		break;
-	case 0x005: // Scroll
+	case 0x0005: // Scroll
 		break;
-	case 0x006: // PPU Address
+	case 0x0006: // PPU Address
 		break;
-	case 0x007: // PPU Data
+	case 0x0007: // PPU Data
+		data = ppu_data_buffer;
+		ppu_data_buffer = ppuRead(ppu_address);
+
+		if (ppu_address >= 0x3F00) data = ppu_data_buffer;
+		ppu_address++;
 		break;
 	}
 
 	return data;
+}
+
+void jays2C02::cpuWrite(uint16_t addr, uint8_t data)
+{
+	switch (addr)
+	{
+	case 0x0000: // Control
+		control.reg = data;
+		break;
+	case 0x0001: // Mask
+		mask.reg = data;
+		break;
+	case 0x0002: // Status
+		break;
+	case 0x0003: // OAM Address
+		break;
+	case 0x0004: // OAM Data
+		break;
+	case 0x0005: // Scroll
+		break;
+	case 0x0006: // PPU Address
+		if (address_latch == 0)
+		{
+			ppu_address = (ppu_address & 0x00FF) | (data << 8);
+			
+			address_latch = 1;
+		}
+		else
+		{
+			ppu_address = (ppu_address & 0xFF00) | data;
+			address_latch = 0;
+		}
+		break;
+	case 0x0007: // PPU Data
+		ppuWrite(ppu_address, data);
+		ppu_address++;
+		break;
+	}
 }
 
 void jays2C02::ppuWrite(uint16_t addr, uint8_t data)
@@ -128,6 +157,23 @@ void jays2C02::ppuWrite(uint16_t addr, uint8_t data)
 	if (cart->ppuWrite(addr, data))
 	{
 
+	}
+	else if (addr >= 0x0000 && addr <= 0x1FFF)
+	{
+		tblPattern[(addr & 0x1000) >> 12][addr & 0x0FFF] = data;
+	}
+	else if (addr >= 0x2000 && addr <= 0x3EFF)
+	{
+
+	}
+	else if (addr >= 0x3F00 && addr <= 0x3FFF)
+	{
+		addr &= 0x001F;
+		if (addr == 0x0010) addr = 0x0000;
+		if (addr == 0x0014) addr = 0x0004;
+		if (addr == 0x0018) addr = 0x0008;
+		if (addr == 0x001C) addr = 0x000C;
+		tblPalette[addr] = data;
 	}
 }
 
@@ -139,6 +185,23 @@ uint8_t jays2C02::ppuRead(uint16_t addr, bool bReadOnly /*= false*/)
 	if (cart->ppuRead(addr, data))
 	{
 
+	}
+	else if (addr >= 0x0000 && addr <= 0x1FFF)
+	{
+		data = tblPattern[(addr & 0x1000) >> 12][addr & 0x0FFF];
+	}
+	else if (addr >= 0x2000 && addr <= 0x3EFF)
+	{
+
+	}
+	else if (addr >= 0x3F00 && addr <= 0x3FFF)
+	{
+		addr &= 0x001F;
+		if (addr == 0x0010) addr = 0x0000;
+		if (addr == 0x0014) addr = 0x0004;
+		if (addr == 0x0018) addr = 0x0008;
+		if (addr == 0x001c) addr = 0x000C;
+		data = tblPalette[addr];
 	}
 
 	return data;
@@ -178,7 +241,34 @@ olc::Sprite& jays2C02::GetNameTable(uint8_t i)
 	return sprNameTable[i];
 }
 
-olc::Sprite& jays2C02::GetPatternTable(uint8_t i)
+olc::Sprite& jays2C02::GetPatternTable(uint8_t i, uint8_t palette)
 {
+	for (uint16_t nTileY = 0; nTileY < 16; nTileY++)
+	{
+		for (uint16_t nTileX = 0; nTileX < 16; nTileX++)
+		{
+			uint16_t nOffset = nTileY * 256 + nTileX * 16;
+			
+			for (uint16_t row = 0; row < 8; row++)
+			{
+				uint8_t tile_lsb = ppuRead(i * 0x1000 + nOffset + row + 0);
+				uint8_t tile_msb = ppuRead(i * 0x1000 + nOffset + row + 8);
+
+				for (uint16_t col = 0; col < 8; col++)
+				{
+					uint8_t pixel = (tile_lsb & 0x01) + (tile_msb & 0x01);
+					tile_lsb >>= 1; tile_msb >>= 1;
+
+					sprPatternTable[i].SetPixel(
+						nTileX * 8 + (7 - col),
+						nTileY * 8 + row,
+						GetColourFromPaletteRam(palette, pixel)
+					);
+				}
+			}
+
+		}
+	}
+
 	return sprPatternTable[i];
 }
